@@ -27,7 +27,7 @@ app = FastAPI(title="LBCA API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5177"],  # Frontend URLs
+    allow_origins=["http://localhost:5173", "http://localhost:5177", "http://localhost:5174"],  # Frontend URLs
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

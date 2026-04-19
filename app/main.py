@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import grade_levels, school_years, sections
 from app.api.routers import students, student_enrollments, student_pace
@@ -6,6 +7,18 @@ from app.models import academic   # noqa: F401
 from app.models import students as _students_models  # noqa: F401
 
 app = FastAPI(title="LBCA Academic API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5177",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
