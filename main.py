@@ -607,3 +607,8 @@ async def apply_password_reset(request: ResetPasswordRequest, db: AsyncSession =
 app.include_router(school_years.router)
 app.include_router(grade_levels.router)
 app.include_router(sections.router)
+
+from app.api.routers import students, student_enrollments, student_pace
+app.include_router(students.router)
+app.include_router(student_enrollments.router)
+app.include_router(student_pace.router)
