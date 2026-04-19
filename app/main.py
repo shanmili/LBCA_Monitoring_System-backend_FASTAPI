@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 
 from app.api.routers import grade_levels, school_years, sections
-from app.models import academic  # noqa: F401
-
+from app.api.routers import students, student_enrollments, student_pace
+from app.models import academic   # noqa: F401
+from app.models import students as _students_models  # noqa: F401
 
 app = FastAPI(title="LBCA Academic API", version="1.0.0")
 
@@ -12,6 +13,12 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
+
 app.include_router(school_years.router)
 app.include_router(grade_levels.router)
 app.include_router(sections.router)
+
+
+app.include_router(students.router)
+app.include_router(student_enrollments.router)
+app.include_router(student_pace.router)

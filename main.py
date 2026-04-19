@@ -21,7 +21,17 @@ from dependencies import get_current_user, get_current_admin, get_current_user_f
 from pydantic import BaseModel, field_validator
 from app.api.routers import school_years, grade_levels, sections
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(title="LBCA API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:5177"],  # Frontend URLs
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ==================== LOCKOUT POLICY ====================
 
@@ -86,7 +96,7 @@ async def write_audit(
 # GET    /api/users/audit-logs   — view audit log (admin)
 # ==============================================================
 
-@app.post("/api/users", status_code=status.HTTP_201_CREATED)
+@app.post("/api/users", status_code=status.HTTP_201_CREATED, tags=["Public"])
 async def register(staff_data: StaffRegisterRequest, db: AsyncSession = Depends(get_db)):
     """Public self-registration — creates a pending staff account."""
     result = await db.execute(select(Staff).where(Staff.email == staff_data.email))
@@ -110,7 +120,7 @@ async def register(staff_data: StaffRegisterRequest, db: AsyncSession = Depends(
     return {"message": "Registration successful. Awaiting admin approval.", "user_id": str(new_staff.id)}
 
 
-@app.get("/api/users", response_model=List[StaffResponse])
+@app.get("/api/users", response_model=List[StaffResponse], tags=["Admin"])
 async def list_users(
     account_status: Optional[str] = Query(None),
     current_user: Staff = Depends(get_current_admin),
@@ -124,13 +134,13 @@ async def list_users(
     return result.scalars().all()
 
 
-@app.get("/api/users/me", response_model=StaffResponse)
+@app.get("/api/users/me", response_model=StaffResponse, tags=["Profile"])
 async def get_own_profile(current_user: Staff = Depends(get_current_user)):
     """Authenticated user — fetch own profile."""
     return current_user
 
 
-@app.patch("/api/users/me")
+@app.patch("/api/users/me", tags=["Profile"])
 async def change_own_password(
     request: ChangePasswordRequest,
     current_user: Staff = Depends(get_current_user),
@@ -148,7 +158,7 @@ async def change_own_password(
     return {"message": "Password changed successfully"}
 
 
-@app.patch("/api/users/{user_id}")
+@app.patch("/api/users/{user_id}", tags=["Admin"])
 async def update_user(
     user_id: str,
     body: UserStatusUpdate | PasswordUpdate,
@@ -217,7 +227,7 @@ async def update_user(
     return target
 
 
-@app.delete("/api/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/api/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Admin"])
 async def deactivate_user(
     user_id: str,
     current_user: Staff = Depends(get_current_admin),
@@ -237,7 +247,7 @@ async def deactivate_user(
     await db.commit()
 
 
-@app.get("/api/users/audit-logs", response_model=List[AuditLogResponse])
+@app.get("/api/users/audit-logs", response_model=List[AuditLogResponse], tags=["Admin"])
 async def get_audit_logs(
     target_user_id: Optional[str] = Query(None, description="Filter by the user the action was performed on"),
     action:         Optional[str] = Query(None, description="Filter by action type"),
@@ -265,7 +275,7 @@ async def get_audit_logs(
 # DELETE /api/sessions/me  — logout
 # ==============================================================
 
-@app.post("/api/sessions", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/sessions", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, tags=["Authentication"])
 async def login(login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db)):
     """Create a session (login). Returns tokens or signals that 2FA is required."""
     result = await db.execute(select(Staff).where(Staff.email == login_data.email))
@@ -390,7 +400,7 @@ async def login(login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
-@app.put("/api/sessions/me", response_model=TokenResponse)
+@app.put("/api/sessions/me", response_model=TokenResponse, tags=["Authentication"])
 async def refresh_session(
     user_and_session: tuple = Depends(get_current_user_from_refresh),
     db: AsyncSession = Depends(get_db),
@@ -414,7 +424,7 @@ async def refresh_session(
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
-@app.delete("/api/sessions/me", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/api/sessions/me", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
 async def logout(
     current_user: Staff = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -438,7 +448,7 @@ async def logout(
 # POST  /api/otp  — verify login OTP and complete session creation
 # ==============================================================
 
-@app.post("/api/otp", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/otp", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, tags=["Authentication"])
 async def verify_otp(verify_data: OTPVerifyRequest, db: AsyncSession = Depends(get_db)):
     """Verify a login OTP and issue tokens (completes 2FA login)."""
     result = await db.execute(
@@ -506,7 +516,7 @@ async def verify_otp(verify_data: OTPVerifyRequest, db: AsyncSession = Depends(g
 # PATCH  /api/password-reset  — verify OTP and apply new password
 # ==============================================================
 
-@app.post("/api/password-reset", status_code=status.HTTP_202_ACCEPTED)
+@app.post("/api/password-reset", status_code=status.HTTP_202_ACCEPTED, tags=["Password Reset"])
 async def request_password_reset(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     """Send a password-reset OTP to the user's registered contact."""
     result = await db.execute(select(Staff).where(Staff.email == request.email))
@@ -555,8 +565,8 @@ async def request_password_reset(request: ForgotPasswordRequest, db: AsyncSessio
     return {"message": "OTP sent to your email/phone"}
 
 
-@app.patch("/api/password-reset")
-async def apply_password_reset(request: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+@app.patch("/api/password-reset", tags=["Password Reset"])
+async def apply_password_reset(request: ResetPasswordRequest, db: AsyncSession = Depends(get_db), tags=["Password Reset"]):
     """Verify OTP token and set the new password."""
     if request.new_password != request.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
@@ -607,3 +617,8 @@ async def apply_password_reset(request: ResetPasswordRequest, db: AsyncSession =
 app.include_router(school_years.router)
 app.include_router(grade_levels.router)
 app.include_router(sections.router)
+
+from app.api.routers import students, student_enrollments, student_pace
+app.include_router(students.router)
+app.include_router(student_enrollments.router)
+app.include_router(student_pace.router)
