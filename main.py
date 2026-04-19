@@ -21,7 +21,17 @@ from dependencies import get_current_user, get_current_admin, get_current_user_f
 from pydantic import BaseModel, field_validator
 from app.api.routers import school_years, grade_levels, sections
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(title="LBCA API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:5177"],  # Frontend URLs
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ==================== LOCKOUT POLICY ====================
 
@@ -607,3 +617,8 @@ async def apply_password_reset(request: ResetPasswordRequest, db: AsyncSession =
 app.include_router(school_years.router)
 app.include_router(grade_levels.router)
 app.include_router(sections.router)
+
+from app.api.routers import students, student_enrollments, student_pace
+app.include_router(students.router)
+app.include_router(student_enrollments.router)
+app.include_router(student_pace.router)
