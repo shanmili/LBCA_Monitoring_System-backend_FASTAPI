@@ -19,6 +19,7 @@ from auth import (
 )
 from dependencies import get_current_user, get_current_admin, get_current_user_from_refresh
 from pydantic import BaseModel, field_validator
+from app.api.routers import school_years, grade_levels, sections
 
 app = FastAPI(title="LBCA API", version="1.0.0")
 
@@ -601,3 +602,8 @@ async def apply_password_reset(request: ResetPasswordRequest, db: AsyncSession =
 # Managed internally by /api/sessions and /api/otp.
 # No direct public endpoint needed.
 # ==============================================================
+
+# Academic module routers
+app.include_router(school_years.router)
+app.include_router(grade_levels.router)
+app.include_router(sections.router)
