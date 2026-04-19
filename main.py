@@ -21,7 +21,17 @@ from dependencies import get_current_user, get_current_admin, get_current_user_f
 from pydantic import BaseModel, field_validator
 from app.api.routers import school_years, grade_levels, sections
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(title="LBCA API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:5177"],  # Frontend URLs
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ==================== LOCKOUT POLICY ====================
 
