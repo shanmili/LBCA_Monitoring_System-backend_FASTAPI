@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Query
+from fastapi import FastAPI, HTTPException, Depends, status, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
@@ -368,7 +368,7 @@ async def login(login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db
         )
         db.add(OTPCode(staff_id=staff.id, code=otp_code, purpose="login", expires_at=expires_at))
         await db.commit()
-        print(f"OTP for {staff.email}: {otp_code}")
+        print(f"OTP for {staff.email}: {otp_code}", flush=True)
         return TokenResponse(requires_2fa=True, user_id=str(staff.id))
 
     access_token  = create_access_token({"sub": str(staff.id)})
@@ -546,10 +546,10 @@ async def request_password_reset(request: ForgotPasswordRequest, db: AsyncSessio
         else:
             reset_record.request_count += 1
 
-    max_attempts = int(os.getenv("MAX_PASSWORD_RESET_ATTEMPTS", 5))
+    max_attempts = int(os.getenv("MAX_PASSWORD_RESET_ATTEMPTS", 3))
     if reset_record.request_count > max_attempts:
         reset_record.locked_until = datetime.now(timezone.utc) + timedelta(
-            minutes=int(os.getenv("PASSWORD_RESET_LOCKOUT_MINUTES", 30))
+            hours=24
         )
         await db.commit()
         raise HTTPException(status_code=429, detail="Too many attempts. Try again in 30 minutes")
@@ -558,10 +558,17 @@ async def request_password_reset(request: ForgotPasswordRequest, db: AsyncSessio
 
     otp_code   = generate_otp()
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=int(os.getenv("OTP_EXPIRY_MINUTES", 10)))
-    db.add(OTPCode(staff_id=staff.id, code=otp_code, purpose="password_reset", expires_at=expires_at))
+    otp = OTPCode(
+        staff_id=staff.id,
+        code=otp_code,
+        purpose="password_reset",
+        expires_at=expires_at,
+    )
+    db.add(otp)
     await db.commit()
+    await db.refresh(otp)
 
-    print(f"PASSWORD RESET OTP for {staff.email}: {otp_code}")
+    print(f"PASSWORD RESET OTP for {staff.email}: {otp_code}", flush=True)
     return {"message": "OTP sent to your email/phone"}
 
 
@@ -606,6 +613,42 @@ async def apply_password_reset(request: ResetPasswordRequest, db: AsyncSession =
     await db.commit()
     return {"message": "Password reset successful. You can now login."}
 
+@app.post("/api/password-reset/validate-otp", tags=["Password Reset"])
+async def validate_reset_otp(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Validate password reset OTP before showing password form."""
+    body = await request.json()
+    email = body.get("email")
+    code = body.get("code")
+    
+    if not email or not code:
+        raise HTTPException(status_code=400, detail="Email and code are required")
+    
+    # Find user
+    result = await db.execute(select(Staff).where(Staff.email == email))
+    staff = result.scalar_one_or_none()
+    
+    if not staff:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Find valid OTP
+    result = await db.execute(
+        select(OTPCode).where(
+            OTPCode.staff_id == staff.id,
+            OTPCode.code == code,
+            OTPCode.purpose == "password_reset",
+            OTPCode.is_used == False,
+            OTPCode.expires_at > datetime.now(timezone.utc),
+        )
+    )
+    otp = result.scalar_one_or_none()
+    
+    if not otp:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+    
+    return {"valid": True, "message": "OTP verified successfully"}
 
 # ==============================================================
 # TABLE 5 — staff_devices

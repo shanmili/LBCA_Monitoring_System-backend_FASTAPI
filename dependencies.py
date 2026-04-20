@@ -15,10 +15,6 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> Staff:
-    """
-    Validates an ACCESS token.
-    Used by all normal authenticated endpoints.
-    """
     token = credentials.credentials
     payload = decode_token(token)
 
@@ -35,7 +31,6 @@ async def get_current_user(
 
     now = datetime.now(timezone.utc)
 
-    # Check session exists, is active, and the access token matches
     result = await db.execute(
         select(StaffSession).where(
             StaffSession.access_token == token,
@@ -47,6 +42,17 @@ async def get_current_user(
 
     if not session:
         raise HTTPException(status_code=401, detail="Session expired or not found")
+
+    if session.last_activity:
+        inactive_seconds = (now - session.last_activity).total_seconds()
+        timeout_minutes = session.inactivity_timeout_minutes
+        if inactive_seconds > timeout_minutes * 60:
+            session.is_active = False
+            await db.commit()
+            raise HTTPException(
+                status_code=401,
+                detail=f"Session expired due to {timeout_minutes} minutes of inactivity"
+            )
 
     # Update last activity
     session.last_activity = now

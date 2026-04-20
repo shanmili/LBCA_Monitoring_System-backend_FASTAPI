@@ -97,9 +97,10 @@ def generate_reset_token() -> str:
     return str(uuid.uuid4())
 
 
+from datetime import datetime, timezone
+
 def check_password_reset_lockout(reset_record) -> bool:
-    """Returns True if the user is currently locked out of password reset."""
     if reset_record and reset_record.locked_until:
-        if datetime.utcnow() < reset_record.locked_until:
+        if datetime.now(timezone.utc) < reset_record.locked_until:  # ✅ Both aware
             return True
     return False
