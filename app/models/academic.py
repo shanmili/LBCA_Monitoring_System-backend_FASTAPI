@@ -33,3 +33,15 @@ class Section(Base):
     name = Column(String(30), nullable=False)
 
     grade_level = relationship("GradeLevel", back_populates="sections")
+
+
+class Subject(Base):
+    __tablename__ = "subjects"
+
+    subject_id = Column(Integer, primary_key=True, index=True)
+    grade_level_id = Column(Integer, ForeignKey("grade_levels.grade_level_id", ondelete="CASCADE"), nullable=False, index=True)
+    subject_name = Column(String(255), nullable=False, index=True)
+    subject_code = Column(String(50), unique=True, nullable=False, index=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    grade_level = relationship("GradeLevel", backref="subjects")

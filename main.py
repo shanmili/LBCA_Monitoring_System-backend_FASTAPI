@@ -622,3 +622,9 @@ from app.api.routers import students, student_enrollments, student_pace
 app.include_router(students.router)
 app.include_router(student_enrollments.router)
 app.include_router(student_pace.router)
+
+from app.api.routers import subjects, schedules, teacher_availabilities, data_quality_logs
+app.include_router(subjects.router)
+app.include_router(schedules.router)
+app.include_router(teacher_availabilities.router)
+app.include_router(data_quality_logs.router)
