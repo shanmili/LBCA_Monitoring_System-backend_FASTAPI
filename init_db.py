@@ -25,6 +25,13 @@ TABLE DESIGN
   section_code    VARCHAR(20)  UNIQUE NOT NULL
   name            VARCHAR(30)  NOT NULL
 
+── subjects ────────────────────────────────────────────────────────
+  subject_id      INTEGER  PK
+  grade_level_id  INTEGER  FK → grade_levels(grade_level_id) ON DELETE CASCADE
+  subject_name    VARCHAR(255)  NOT NULL
+  subject_code    VARCHAR(50)  UNIQUE NOT NULL
+  is_active       BOOLEAN NOT NULL DEFAULT TRUE
+
 ── students ────────────────────────────────────────────────────────
   student_id          INTEGER  PK
   login_id            VARCHAR(20)  UNIQUE NULLABLE   auto-assigned as S### after insert
@@ -80,6 +87,36 @@ TABLE DESIGN
   last_activity VARCHAR(100) NOT NULL DEFAULT "Today"
   created_at    DATETIME NOT NULL DEFAULT utcnow
   updated_at    DATETIME NOT NULL DEFAULT utcnow ON UPDATE utcnow
+
+── schedules ────────────────────────────────────────────────────────
+  schedule_id   INTEGER  PK
+  section_id    INTEGER  FK → sections(section_id) ON DELETE CASCADE
+  day           VARCHAR(20) NOT NULL
+  time_start    TIME NOT NULL
+  time_end      TIME NOT NULL
+  classroom     VARCHAR(50) NOT NULL
+
+── teacher_availabilities ──────────────────────────────────────────
+  availability_id INTEGER  PK
+  teacher_id      UUID  FK → staff(id) ON DELETE CASCADE
+  day             VARCHAR(20) NOT NULL
+  start_time      TIME NOT NULL
+  end_time        TIME NOT NULL
+  location        VARCHAR(100) NOT NULL
+  is_active       BOOLEAN NOT NULL DEFAULT TRUE
+  created_at      DATETIME NOT NULL DEFAULT utcnow
+  updated_at      DATETIME NOT NULL DEFAULT utcnow ON UPDATE utcnow
+
+── data_quality_logs ──────────────────────────────────────────────
+  log_id           INTEGER  PK
+  student_id       INTEGER  FK → students(student_id) ON DELETE CASCADE
+  teacher_id       UUID  FK → staff(id) ON DELETE SET NULL  NULLABLE
+  student_pace_id  INTEGER  FK → student_paces(pace_id) ON DELETE SET NULL  NULLABLE
+  issue_type       VARCHAR(100) NOT NULL
+  resolved         BOOLEAN NOT NULL DEFAULT FALSE
+  resolved_date    DATETIME NULLABLE
+  created_at       DATETIME NOT NULL DEFAULT utcnow
+  updated_at       DATETIME NOT NULL DEFAULT utcnow ON UPDATE utcnow
 """
 
 from database import sync_engine, Base
@@ -88,8 +125,9 @@ from database import sync_engine, Base
 # calling create_all().  The noqa comments suppress "imported but unused"
 # linter warnings – these imports are intentional side-effects.
 import models                           # noqa: F401  (staff / auth models)
-import app.models.academic              # noqa: F401  (SchoolYear, GradeLevel, Section)
+import app.models.academic              # noqa: F401  (SchoolYear, GradeLevel, Section, Subject)
 import app.models.students              # noqa: F401  (Student, StudentEnrollment, StudentPace, EarlyWarning)
+import app.models.operational           # noqa: F401  (Schedule, TeacherAvailability, DataQualityLog)
 
 
 def init_db() -> None:
