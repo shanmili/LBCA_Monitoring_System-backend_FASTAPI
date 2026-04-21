@@ -23,14 +23,14 @@ from app.api.routers import school_years, grade_levels, sections
 
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import Base, engine
+from database import Base, async_engine
 from models import *
 
 app = FastAPI(title="LBCA API", version="1.0.0")
 
 @app.on_event("startup")
 async def startup():
-    async with engine.begin() as conn:
+    async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
 origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
