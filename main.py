@@ -25,9 +25,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="LBCA API", version="1.0.0")
 
+origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5177", "http://localhost:5174"],  # Frontend URLs
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
