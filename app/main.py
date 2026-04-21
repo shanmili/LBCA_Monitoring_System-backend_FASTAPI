@@ -7,6 +7,7 @@ from app.api.routers import schedules, teacher_availabilities, data_quality_logs
 from app.models import academic   # noqa: F401
 from app.models import students as _students_models  # noqa: F401
 from app.models import operational  # noqa: F401
+import os
 
 app = FastAPI(title="LBCA Academic API", version="1.0.0")
 
