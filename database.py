@@ -13,7 +13,7 @@ sync_engine = create_engine(SYNC_DATABASE_URL, echo=True)
 # Async engine (for API)
 raw_url = SYNC_DATABASE_URL.replace("postgres://", "postgresql://").replace("postgresql://", "postgresql+asyncpg://")
 ASYNC_DATABASE_URL = raw_url
-async_engine = create_async_engine(ASYNC_DATABASE_URL, echo=True)  # ← ADD THIS LINE
+async_engine = create_async_engine(ASYNC_DATABASE_URL, echo=True)
 
 AsyncSessionLocal = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
