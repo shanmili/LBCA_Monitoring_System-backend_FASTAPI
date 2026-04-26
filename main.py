@@ -114,6 +114,32 @@ async def write_audit(
 # GET    /api/users/audit-logs   — view audit log (admin)
 # ==============================================================
 
+@app.post("/api/seed-admin")
+async def seed_admin(db: AsyncSession = Depends(get_db)):
+    from auth import get_password_hash
+    result = await db.execute(select(Staff).where(Staff.email == "admin@lbca.edu.ph"))
+    existing = result.scalar_one_or_none()
+    
+    if existing:
+        existing.password_hash = get_password_hash("Admin123!")
+        await db.commit()
+        return {"message": "Admin already existed — password refreshed."}
+    
+    admin = Staff(
+        email="admin@lbca.edu.ph",
+        password_hash=get_password_hash("Admin123!"),
+        first_name="System",
+        last_name="Administrator",
+        contact_number="+639123456789",
+        role="admin",
+        account_status="approved",
+        is_approved=True,
+        requires_password_change=False,
+    )
+    db.add(admin)
+    await db.commit()
+    return {"message": "Admin created: admin@lbca.edu.ph / Admin123!"}
+
 @app.post("/api/users", status_code=status.HTTP_201_CREATED, tags=["Public"])
 async def register(staff_data: StaffRegisterRequest, db: AsyncSession = Depends(get_db)):
     """Public self-registration — creates a pending staff account."""
