@@ -388,7 +388,12 @@ async def login(login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db
         db.add(OTPCode(staff_id=staff.id, code=otp_code, purpose="login", expires_at=expires_at))
         await db.commit()
         print(f"OTP for {staff.email}: {otp_code}", flush=True)
-        return TokenResponse(requires_2fa=True, user_id=str(staff.id))
+        debug_otp_enabled = os.getenv("DEBUG_OTP", "false").lower() in ("1", "true", "yes")
+        return TokenResponse(
+            requires_2fa=True,
+            user_id=str(staff.id),
+            debug_otp=otp_code if debug_otp_enabled else None,
+        )
 
     access_token  = create_access_token({"sub": str(staff.id)})
     refresh_token = create_refresh_token({"sub": str(staff.id)})

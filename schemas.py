@@ -51,6 +51,7 @@ class TokenResponse(BaseModel):
     token_type:    str = "bearer"
     requires_2fa:  bool = False
     user_id:       Optional[str] = None
+    debug_otp:     Optional[str] = None
 
 
 class OTPVerifyRequest(BaseModel):
