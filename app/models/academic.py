@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, Column, Date, ForeignKey, Integer, String
+from datetime import datetime
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -45,3 +47,16 @@ class Subject(Base):
     is_active = Column(Boolean, default=True, nullable=False)
 
     grade_level = relationship("GradeLevel", backref="subjects")
+
+
+class TeacherAssignment(Base):
+    __tablename__ = "teacher_assignments"
+
+    assignment_id = Column(Integer, primary_key=True, index=True)
+    teacher_id = Column(UUID(as_uuid=True), ForeignKey("staff.id", ondelete="CASCADE"), nullable=False, index=True)
+    section_id = Column(Integer, ForeignKey("sections.section_id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    teacher = relationship("Staff", backref="assignments")
+    section = relationship("Section", backref="teacher_assignments")

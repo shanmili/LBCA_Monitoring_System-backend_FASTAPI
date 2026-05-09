@@ -1,4 +1,4 @@
-from .academic import GradeLevel, SchoolYear, Section, Subject
+from .academic import GradeLevel, SchoolYear, Section, Subject, TeacherAssignment
 from .students import EarlyWarning, Student, StudentEnrollment, StudentPace
 from .operational import Schedule, TeacherAvailability, DataQualityLog
 
@@ -7,6 +7,7 @@ __all__ = [
     "GradeLevel",
     "Section",
     "Subject",
+    "TeacherAssignment",
     "Student",
     "StudentEnrollment",
     "StudentPace",

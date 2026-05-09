@@ -108,6 +108,7 @@ class StaffResponse(BaseModel):
     role:           str
     account_status: str
     is_approved:    bool
+    is_active:      bool
     created_at:     datetime
 
     class Config:
