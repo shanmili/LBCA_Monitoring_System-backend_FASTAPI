@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Query, Request
+from fastapi import FastAPI, HTTPException, Depends, status, Query, Request, UploadFile, File
+import shutil, uuid as _uuid, pathlib
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta, timezone
@@ -22,11 +23,17 @@ from pydantic import BaseModel, field_validator
 from app.api.routers import school_years, grade_levels, sections
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from database import Base, async_engine
 from models import *
 
 app = FastAPI(title="LBCA API", version="1.0.0")
+
+# Serve uploaded profile pictures at /uploads/...
+# Ensure upload dirs exist before mounting
+pathlib.Path("uploads/profile_pics").mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.on_event("startup")
 async def startup():
@@ -82,6 +89,14 @@ class ChangePasswordRequest(BaseModel):
     @classmethod
     def password_strength(cls, v: str) -> str:
         return validate_password_strength(v)
+
+
+class UpdateProfileRequest(BaseModel):
+    first_name:     str
+    last_name:      str
+    middle_name:    Optional[str] = None
+    email:          str
+    contact_number: str
 
 
 # ==================== HELPER ====================
@@ -159,6 +174,24 @@ async def get_own_profile(current_user: Staff = Depends(get_current_user)):
     return current_user
 
 
+@app.get("/api/users/admin-profile", tags=["Profile"])
+async def get_admin_profile(
+    current_user: Staff = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Any authenticated user — fetch the admin's photo and name for the sidebar."""
+    result = await db.execute(
+        select(Staff).where(Staff.role == "admin", Staff.is_active == True).limit(1)
+    )
+    admin = result.scalar_one_or_none()
+    if not admin:
+        return {"profile_pic": None, "first_name": "", "last_name": ""}
+    return {
+        "profile_pic": admin.profile_pic,
+        "first_name":  admin.first_name,
+        "last_name":   admin.last_name,
+    }
+
 @app.patch("/api/users/me", tags=["Profile"])
 async def change_own_password(
     request: ChangePasswordRequest,
@@ -175,6 +208,72 @@ async def change_own_password(
     current_user.requires_password_change = False
     await db.commit()
     return {"message": "Password changed successfully"}
+
+
+@app.put("/api/users/me/profile", response_model=StaffResponse, tags=["Profile"])
+async def update_own_profile(
+    body: UpdateProfileRequest,
+    current_user: Staff = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Authenticated user — update own personal info (name, email, contact)."""
+    # Check email uniqueness if it changed
+    if body.email != current_user.email:
+        result = await db.execute(select(Staff).where(Staff.email == body.email))
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Email already in use by another account")
+
+    current_user.first_name     = body.first_name.strip()
+    current_user.last_name      = body.last_name.strip()
+    current_user.middle_name    = body.middle_name.strip() if body.middle_name else None
+    current_user.email          = body.email.strip()
+    current_user.contact_number = body.contact_number.strip()
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+
+
+# Where uploaded profile pictures are stored (relative to the working directory)
+UPLOAD_DIR = pathlib.Path("uploads/profile_pics")
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+MAX_UPLOAD_BYTES    = 5 * 1024 * 1024  # 5 MB
+
+
+@app.post("/api/users/me/profile-pic", response_model=StaffResponse, tags=["Profile"])
+async def upload_profile_pic(
+    file: UploadFile = File(...),
+    current_user: Staff = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Authenticated user — upload / replace own profile picture."""
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, GIF, and WebP images are allowed")
+
+    # Read file into memory so we can check size before writing to disk
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File must be smaller than 5 MB")
+
+    ext      = pathlib.Path(file.filename).suffix or ".jpg"
+    filename = f"{_uuid.uuid4().hex}{ext}"
+    dest     = UPLOAD_DIR / filename
+
+    with open(dest, "wb") as out:
+        out.write(data)
+
+    # Delete old picture file if it was stored locally
+    if current_user.profile_pic and current_user.profile_pic.startswith("/uploads/"):
+        old_path = pathlib.Path(current_user.profile_pic.lstrip("/"))
+        if old_path.exists():
+            old_path.unlink(missing_ok=True)
+
+    # Store as a URL path the frontend can fetch
+    current_user.profile_pic = f"/uploads/profile_pics/{filename}"
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+
 
 
 @app.patch("/api/users/{user_id}", tags=["Admin"])

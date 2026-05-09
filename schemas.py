@@ -102,6 +102,9 @@ class StaffResponse(BaseModel):
     email:          EmailStr
     first_name:     str
     last_name:      str
+    middle_name:    Optional[str] = None
+    contact_number: str
+    profile_pic:    Optional[str] = None
     role:           str
     account_status: str
     is_approved:    bool
