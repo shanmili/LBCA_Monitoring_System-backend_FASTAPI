@@ -22,7 +22,7 @@ from auth import (
 )
 from dependencies import get_current_user, get_current_admin, get_current_user_from_refresh
 from pydantic import BaseModel, field_validator
-from app.api.routers import school_years, grade_levels, sections
+from app.api.routers import school_years, grade_levels, sections, teacher_assignments, subjects, students, student_enrollments, student_pace, schedules, teacher_availabilities, data_quality_logs
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -941,6 +941,7 @@ async def delete_class_schedule(
 app.include_router(school_years.router)
 app.include_router(grade_levels.router)
 app.include_router(sections.router)
+app.include_router(teacher_assignments.router)
 
 from app.api.routers import students, student_enrollments, student_pace
 app.include_router(students.router)
