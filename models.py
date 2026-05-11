@@ -166,7 +166,7 @@ class AuditLog(Base):
 class ClassSchedule(Base):
     __tablename__ = "class_schedules"
 
-    class_schedule_id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True)
     school_year_id = Column(Integer, nullable=False, index=True)  # References school_years table
     section_id = Column(Integer, nullable=False, index=True)  # References sections table
     subject_id = Column(Integer, nullable=False, index=True)  # References subjects table

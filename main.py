@@ -807,7 +807,7 @@ async def list_class_schedules(
             teacher = teacher_result.scalar_one_or_none()
             
             response.append({
-                "class_schedule_id": schedule.class_schedule_id,
+                "id": schedule.id,
                 "school_year_id": schedule.school_year_id,
                 "section_id": schedule.section_id,
                 "subject_id": schedule.subject_id,
@@ -826,7 +826,51 @@ async def list_class_schedules(
         print(f"Error: {e}")
         return []
 
-
+@app.put("/api/class-schedules/{schedule_id}")
+async def update_class_schedule(
+    schedule_id: int,
+    data: ClassScheduleUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Staff = Depends(get_current_admin),
+):
+    """Update an existing class schedule"""
+    try:
+        result = await db.execute(
+            select(ClassSchedule).where(ClassSchedule.id == schedule_id)
+        )
+        schedule = result.scalar_one_or_none()
+        if not schedule:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        
+        # Update fields
+        if data.school_year_id is not None:
+            schedule.school_year_id = data.school_year_id
+        if data.section_id is not None:
+            schedule.section_id = data.section_id
+        if data.subject_id is not None:
+            schedule.subject_id = data.subject_id
+        if data.teacher_id is not None:
+            schedule.teacher_id = uuid.UUID(data.teacher_id)
+        if data.day_of_week is not None:
+            schedule.day_of_week = data.day_of_week
+        if data.start_time is not None:
+            schedule.start_time = data.start_time
+        if data.end_time is not None:
+            schedule.end_time = data.end_time
+        if data.room is not None:
+            schedule.room = data.room
+        
+        schedule.updated_at = datetime.now(timezone.utc)
+        
+        await db.commit()
+        await db.refresh(schedule)
+        
+        return {"message": "Schedule updated successfully", "id": schedule.id}
+    except Exception as e:
+        print(f"Error updating schedule: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+        
 @app.post("/api/class-schedules", status_code=status.HTTP_201_CREATED)
 async def create_class_schedule(
     data: ClassScheduleCreate,
@@ -854,7 +898,7 @@ async def create_class_schedule(
         await db.commit()
         await db.refresh(schedule)
         
-        return {"message": "Schedule created successfully", "class_schedule_id": schedule.class_schedule_id}
+        return {"message": "Schedule created successfully", "id": schedule.id}
     except Exception as e:
         print(f"Error creating schedule: {e}")
         await db.rollback()
@@ -871,7 +915,7 @@ async def update_class_schedule(
     """Update an existing class schedule"""
     try:
         result = await db.execute(
-            select(ClassSchedule).where(ClassSchedule.class_schedule_id == schedule_id)
+            select(ClassSchedule).where(ClassSchedule.id == schedule_id)
         )
         schedule = result.scalar_one_or_none()
         if not schedule:
@@ -902,7 +946,7 @@ async def update_class_schedule(
         await db.commit()
         await db.refresh(schedule)
         
-        return {"message": "Schedule updated successfully", "class_schedule_id": schedule.class_schedule_id}
+        return {"message": "Schedule updated successfully", "id": schedule.id}
     except Exception as e:
         print(f"Error updating schedule: {e}")
         await db.rollback()
@@ -918,7 +962,7 @@ async def delete_class_schedule(
     """Delete a class schedule"""
     try:
         result = await db.execute(
-            select(ClassSchedule).where(ClassSchedule.class_schedule_id == schedule_id)
+            select(ClassSchedule).where(ClassSchedule.id == schedule_id)
         )
         schedule = result.scalar_one_or_none()
         if not schedule:
