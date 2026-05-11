@@ -158,3 +158,34 @@ class AuditLog(Base):
         Index("ix_audit_logs_target_user_id", "target_user_id"),
         Index("ix_audit_logs_created_at", "created_at"),
     )
+
+# ==============================================================
+# ClassSchedule — connects teachers, subjects, and sections for scheduling
+# ==============================================================
+
+class ClassSchedule(Base):
+    __tablename__ = "class_schedules"
+
+    class_schedule_id = Column(Integer, primary_key=True, index=True)
+    school_year_id = Column(Integer, nullable=False, index=True)  # References school_years table
+    section_id = Column(Integer, nullable=False, index=True)  # References sections table
+    subject_id = Column(Integer, nullable=False, index=True)  # References subjects table
+    teacher_id = Column(UUID(as_uuid=True), ForeignKey("staff.id", ondelete="CASCADE"), nullable=False, index=True)
+    day_of_week = Column(String(20), nullable=False)  # Monday, Tuesday, Wednesday, Thursday, Friday
+    start_time = Column(String(10), nullable=False)   # HH:MM format (e.g., "08:00")
+    end_time = Column(String(10), nullable=False)     # HH:MM format (e.g., "09:00")
+    room = Column(String(50), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    teacher = relationship("Staff", foreign_keys=[teacher_id])
+
+    __table_args__ = (
+        # Prevent duplicate schedules for same section at same time
+        Index("ix_class_schedules_section_day_time", "section_id", "day_of_week", "start_time"),
+        # Prevent teacher from being double-booked
+        Index("ix_class_schedules_teacher_day_time", "teacher_id", "day_of_week", "start_time"),
+        # Prevent same teacher from teaching same subject in same section
+        Index("ix_class_schedules_teacher_subject_section", "teacher_id", "subject_id", "section_id", "school_year_id"),
+    )

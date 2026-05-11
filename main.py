@@ -1,17 +1,19 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Query, Request, UploadFile, File
 import shutil, uuid as _uuid, pathlib
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_, or_
 from datetime import datetime, timedelta, timezone
 import os
 from typing import List, Optional
 
 from database import get_db
-from models import Staff, StaffDevice, OTPCode, PasswordReset, AuditLog
+from app.models.academic import SchoolYear, Section, Subject
+from models import Staff, StaffDevice, OTPCode, PasswordReset, AuditLog, ClassSchedule
 from schemas import (
     StaffRegisterRequest, StaffLoginRequest, TokenResponse, OTPVerifyRequest,
     ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest,
-    StaffResponse, AuditLogResponse
+    StaffResponse, AuditLogResponse, ClassScheduleCreate, ClassScheduleUpdate, 
+    ClassScheduleResponse
 )
 from auth import (
     verify_password, get_password_hash, create_access_token,
@@ -44,6 +46,8 @@ allowed_origins = [
     "http://localhost:5173",
     "http://localhost:5174",
     "http://localhost:5177",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
 ]
 
 extra = os.getenv("ALLOWED_ORIGINS", "")
@@ -773,6 +777,112 @@ async def validate_reset_otp(
     
     return {"valid": True, "message": "OTP verified successfully"}
 
+# ==============================================================
+# CLASS SCHEDULES - Simplified (no enrichment)
+# ==============================================================
+
+@app.get("/api/class-schedules/")
+async def list_class_schedules(
+    school_year_id: Optional[int] = Query(None),
+    section_id: Optional[int] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Staff = Depends(get_current_user),
+):
+    """List all class schedules"""
+    try:
+        query = select(ClassSchedule)
+        
+        if school_year_id:
+            query = query.where(ClassSchedule.school_year_id == school_year_id)
+        if section_id:
+            query = query.where(ClassSchedule.section_id == section_id)
+        
+        result = await db.execute(query)
+        schedules = result.scalars().all()
+        
+        response = []
+        for schedule in schedules:
+            # Get teacher name
+            teacher_result = await db.execute(select(Staff).where(Staff.id == schedule.teacher_id))
+            teacher = teacher_result.scalar_one_or_none()
+            
+            response.append({
+                "class_schedule_id": schedule.class_schedule_id,
+                "school_year_id": schedule.school_year_id,
+                "section_id": schedule.section_id,
+                "subject_id": schedule.subject_id,
+                "teacher_id": str(schedule.teacher_id),
+                "teacher_name": f"{teacher.first_name} {teacher.last_name}" if teacher else "Unknown",
+                "day_of_week": schedule.day_of_week,
+                "start_time": schedule.start_time,
+                "end_time": schedule.end_time,
+                "room": schedule.room,
+                "created_at": schedule.created_at,
+                "updated_at": schedule.updated_at,
+            })
+        
+        return response
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
+
+
+@app.post("/api/class-schedules", status_code=status.HTTP_201_CREATED)
+async def create_class_schedule(
+    data: ClassScheduleCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Staff = Depends(get_current_admin),
+):
+    """Create a new class schedule"""
+    try:
+        # Verify teacher exists
+        teacher_result = await db.execute(select(Staff).where(Staff.id == uuid.UUID(data.teacher_id)))
+        if not teacher_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Teacher not found")
+        
+        schedule = ClassSchedule(
+            school_year_id=data.school_year_id,
+            section_id=data.section_id,
+            subject_id=data.subject_id,
+            teacher_id=uuid.UUID(data.teacher_id),
+            day_of_week=data.day_of_week,
+            start_time=data.start_time,
+            end_time=data.end_time,
+            room=data.room,
+        )
+        db.add(schedule)
+        await db.commit()
+        await db.refresh(schedule)
+        
+        return {"message": "Schedule created successfully", "class_schedule_id": schedule.class_schedule_id}
+    except Exception as e:
+        print(f"Error creating schedule: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/class-schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_class_schedule(
+    schedule_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Staff = Depends(get_current_admin),
+):
+    """Delete a class schedule"""
+    try:
+        result = await db.execute(
+            select(ClassSchedule).where(ClassSchedule.class_schedule_id == schedule_id)
+        )
+        schedule = result.scalar_one_or_none()
+        if not schedule:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        
+        await db.delete(schedule)
+        await db.commit()
+    except Exception as e:
+        print(f"Error deleting schedule: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+        
 # ==============================================================
 # TABLE 5 — staff_devices
 # Managed internally by /api/sessions and /api/otp.

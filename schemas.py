@@ -124,3 +124,52 @@ class AuditLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ==============================================================
+# Class Schedule Schemas
+# ==============================================================
+
+class ClassScheduleCreate(BaseModel):
+    school_year_id: int
+    section_id: int
+    subject_id: int
+    teacher_id: str
+    day_of_week: str
+    start_time: str
+    end_time: str
+    room: str
+
+
+class ClassScheduleUpdate(BaseModel):
+    school_year_id: Optional[int] = None
+    section_id: Optional[int] = None
+    subject_id: Optional[int] = None
+    teacher_id: Optional[str] = None
+    day_of_week: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    room: Optional[str] = None
+
+
+class ClassScheduleResponse(BaseModel):
+    class_schedule_id: int
+    school_year_id: int
+    school_year: Optional[str] = None
+    section_id: int
+    section_code: Optional[str] = None
+    section_name: Optional[str] = None
+    subject_id: int
+    subject_name: Optional[str] = None
+    subject_code: Optional[str] = None
+    teacher_id: str
+    teacher_name: Optional[str] = None
+    day_of_week: str
+    start_time: str
+    end_time: str
+    room: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
