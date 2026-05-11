@@ -22,7 +22,7 @@ from auth import (
 )
 from dependencies import get_current_user, get_current_admin, get_current_user_from_refresh
 from pydantic import BaseModel, field_validator
-from app.api.routers import school_years, grade_levels, sections
+from app.api.routers import school_years, grade_levels, sections, teacher_assignments, subjects, students, student_enrollments, student_pace, schedules, teacher_availabilities, data_quality_logs
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -836,7 +836,7 @@ async def create_class_schedule(
     """Create a new class schedule"""
     try:
         # Verify teacher exists
-        teacher_result = await db.execute(select(Staff).where(Staff.id == uuid.UUID(data.teacher_id)))
+        teacher_result = await db.execute(select(Staff).where(Staff.id == _uuid.UUID(data.teacher_id)))
         if not teacher_result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Teacher not found")
         
@@ -844,7 +844,7 @@ async def create_class_schedule(
             school_year_id=data.school_year_id,
             section_id=data.section_id,
             subject_id=data.subject_id,
-            teacher_id=uuid.UUID(data.teacher_id),
+            teacher_id=_uuid.UUID(data.teacher_id),
             day_of_week=data.day_of_week,
             start_time=data.start_time,
             end_time=data.end_time,
@@ -857,6 +857,54 @@ async def create_class_schedule(
         return {"message": "Schedule created successfully", "class_schedule_id": schedule.class_schedule_id}
     except Exception as e:
         print(f"Error creating schedule: {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.patch("/api/class-schedules/{schedule_id}")
+async def update_class_schedule(
+    schedule_id: int,
+    data: ClassScheduleUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Staff = Depends(get_current_admin),
+):
+    """Update an existing class schedule"""
+    try:
+        result = await db.execute(
+            select(ClassSchedule).where(ClassSchedule.class_schedule_id == schedule_id)
+        )
+        schedule = result.scalar_one_or_none()
+        if not schedule:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        
+        # Update only provided fields
+        if data.school_year_id is not None:
+            schedule.school_year_id = data.school_year_id
+        if data.section_id is not None:
+            schedule.section_id = data.section_id
+        if data.subject_id is not None:
+            schedule.subject_id = data.subject_id
+        if data.teacher_id is not None:
+            # Verify teacher exists
+            teacher_result = await db.execute(select(Staff).where(Staff.id == _uuid.UUID(data.teacher_id)))
+            if not teacher_result.scalar_one_or_none():
+                raise HTTPException(status_code=404, detail="Teacher not found")
+            schedule.teacher_id = _uuid.UUID(data.teacher_id)
+        if data.day_of_week is not None:
+            schedule.day_of_week = data.day_of_week
+        if data.start_time is not None:
+            schedule.start_time = data.start_time
+        if data.end_time is not None:
+            schedule.end_time = data.end_time
+        if data.room is not None:
+            schedule.room = data.room
+        
+        await db.commit()
+        await db.refresh(schedule)
+        
+        return {"message": "Schedule updated successfully", "class_schedule_id": schedule.class_schedule_id}
+    except Exception as e:
+        print(f"Error updating schedule: {e}")
         await db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -893,6 +941,7 @@ async def delete_class_schedule(
 app.include_router(school_years.router)
 app.include_router(grade_levels.router)
 app.include_router(sections.router)
+app.include_router(teacher_assignments.router)
 
 from app.api.routers import students, student_enrollments, student_pace
 app.include_router(students.router)
