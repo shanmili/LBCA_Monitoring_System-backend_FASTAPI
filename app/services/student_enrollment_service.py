@@ -27,6 +27,8 @@ async def list_enrollments(
     db: AsyncSession,
     student_id: int | None = None,
     school_year_id: int | None = None,
+    section_id: int | None = None,
+    grade_level_id: int | None = None,
 ) -> list[StudentEnrollment]:
     query = (
         select(StudentEnrollment)
@@ -42,6 +44,10 @@ async def list_enrollments(
         query = query.where(StudentEnrollment.student_id == student_id)
     if school_year_id is not None:
         query = query.where(StudentEnrollment.school_year_id == school_year_id)
+    if section_id is not None:
+        query = query.where(StudentEnrollment.section_id == section_id)
+    if grade_level_id is not None:
+        query = query.where(StudentEnrollment.grade_level_id == grade_level_id)
 
     result = await db.execute(query)
     return list(result.scalars().all())
@@ -69,12 +75,6 @@ async def create_enrollment(db: AsyncSession, payload: dict) -> StudentEnrollmen
         payload["school_year_id"],
     )
 
-    if not (await db.get(Student, payload["student_id"])):
-        raise ServiceError(404, {"student_id": ["Student does not exist."]})
-
-    if not payload.get("enrollment_date"):
-        payload["enrollment_date"] = str(date.today())
-
     enrollment = StudentEnrollment(**payload)
     db.add(enrollment)
 
@@ -82,54 +82,62 @@ async def create_enrollment(db: AsyncSession, payload: dict) -> StudentEnrollmen
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise ServiceError(400, {"detail": "Enrollment could not be created. Check for duplicate or invalid data."})
+        raise ServiceError(400, {"detail": "Could not create enrollment."})
 
     await db.refresh(enrollment)
     return await get_enrollment(db, enrollment.enrollment_id)
 
 
-async def create_enrollment_with_student(db: AsyncSession, payload: dict) -> tuple[Student, StudentEnrollment]:
-    # --- Split student fields out of payload ---
-    student_field_names = [
-        "first_name", "middle_name", "last_name", "birth_date",
-        "gender", "address", "guardian_first_name", "guardian_mid_name",
-        "guardian_last_name", "guardian_contact", "guardian_relationship",
-    ]
-    student_data = {k: payload.pop(k) for k in student_field_names if k in payload}
-    student_data["created_by"] = payload.get("enrolled_by")
-
-    await _verify_fks(db, payload["grade_level_id"], payload["section_id"], payload["school_year_id"])
-
-    student = await create_student(db, student_data)
-
-    if not payload.get("enrollment_date"):
-        payload["enrollment_date"] = str(date.today())
-
-    # --- Build enrollment payload with only StudentEnrollment columns ---
-    enrollment_data = {
-        "student_id":          student.student_id,
-        "grade_level_id":      payload["grade_level_id"],
-        "section_id":          payload["section_id"],
-        "school_year_id":      payload["school_year_id"],
-        "enrolled_by":         payload.get("enrolled_by"),
-        "next_grade_level_id": payload.get("next_grade_level_id"),
-        "enrollment_date":     payload["enrollment_date"],
-        "is_active":           payload.get("is_active", True),
-        "end_of_year_status":  payload.get("end_of_year_status"),
+async def create_enrollment_with_student(
+    db: AsyncSession, payload: dict
+) -> tuple[Student, StudentEnrollment]:
+    student_fields = {
+        "first_name": payload["first_name"],
+        "middle_name": payload.get("middle_name"),
+        "last_name": payload["last_name"],
+        "birth_date": payload["birth_date"],
+        "gender": payload["gender"],
+        "address": payload["address"],
+        "guardian_first_name": payload["guardian_first_name"],
+        "guardian_mid_name": payload.get("guardian_mid_name"),
+        "guardian_last_name": payload["guardian_last_name"],
+        "guardian_contact": payload["guardian_contact"],
+        "guardian_relationship": payload["guardian_relationship"],
+        "created_by": payload.get("created_by"),
     }
 
-    enrollment = StudentEnrollment(**enrollment_data)
+    enrollment_fields = {
+        "grade_level_id": payload["grade_level_id"],
+        "section_id": payload["section_id"],
+        "school_year_id": payload["school_year_id"],
+        "enrollment_date": payload.get("enrollment_date"),
+        "next_grade_level_id": payload.get("next_grade_level_id"),
+        "is_active": payload.get("is_active", True),
+        "enrolled_by": payload.get("enrolled_by"),
+    }
+
+    await _verify_fks(
+        db,
+        enrollment_fields["grade_level_id"],
+        enrollment_fields["section_id"],
+        enrollment_fields["school_year_id"],
+    )
+
+    student = await create_student(db, student_fields)
+
+    enrollment_fields["student_id"] = student.student_id
+    enrollment = StudentEnrollment(**enrollment_fields)
     db.add(enrollment)
 
     try:
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise ServiceError(400, {"detail": "Enrollment could not be created."})
+        raise ServiceError(400, {"detail": "Could not create enrollment."})
 
     await db.refresh(enrollment)
-    enrollment_row = await get_enrollment(db, enrollment.enrollment_id)
-    return student, enrollment_row
+    enrollment = await get_enrollment(db, enrollment.enrollment_id)
+    return student, enrollment
 
 
 async def update_enrollment(
@@ -139,11 +147,6 @@ async def update_enrollment(
     if not enrollment:
         raise ServiceError(404, {"error": "Enrollment not found."})
 
-    gl = changes.get("grade_level_id", enrollment.grade_level_id)
-    sec = changes.get("section_id", enrollment.section_id)
-    sy = changes.get("school_year_id", enrollment.school_year_id)
-    await _verify_fks(db, gl, sec, sy)
-
     for key, value in changes.items():
         setattr(enrollment, key, value)
 
@@ -151,7 +154,7 @@ async def update_enrollment(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise ServiceError(400, {"detail": "Update failed due to a data conflict."})
+        raise ServiceError(400, {"detail": "Update failed."})
 
     await db.refresh(enrollment)
     return await get_enrollment(db, enrollment_id)
