@@ -86,7 +86,7 @@ async def list_student_paces_route(
 async def create_pace_route(
     payload: StudentPaceCreate,
     db: AsyncSession = Depends(get_db),
-    _admin=Depends(require_admin),
+    _user=Depends(get_current_user),
 ):
     try:
         row = await create_pace(db, payload.model_dump())
@@ -108,7 +108,7 @@ async def update_pace_route(
     pace_id: int,
     payload: StudentPaceUpdate,
     db: AsyncSession = Depends(get_db),
-    _admin=Depends(require_admin),
+    _user=Depends(get_current_user),
 ):
     try:
         row = await update_pace(db, pace_id, payload.model_dump(exclude_unset=True))
@@ -125,7 +125,7 @@ async def update_pace_route(
 async def delete_pace_route(
     pace_id: int,
     db: AsyncSession = Depends(get_db),
-    _admin=Depends(require_admin),
+    _user=Depends(get_current_user),
 ):
     try:
         await delete_pace(db, pace_id)
