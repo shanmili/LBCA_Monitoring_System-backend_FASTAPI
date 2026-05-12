@@ -23,17 +23,38 @@ router = APIRouter(tags=["Student Enrollments"])
 
 
 def _to_enrollment_out(row) -> dict:
-    return StudentEnrollmentOut.model_validate(row).model_dump(mode="json")
+    """Serialize enrollment with embedded student info for the PACE table."""
+    base = StudentEnrollmentOut.model_validate(row).model_dump(mode="json")
+    # Embed student name fields so the frontend doesn't need a second request
+    if row.student:
+        base["student"] = {
+            "student_id":  row.student.student_id,
+            "first_name":  row.student.first_name,
+            "middle_name": row.student.middle_name,
+            "last_name":   row.student.last_name,
+            "login_id":    row.student.login_id,
+        }
+    else:
+        base["student"] = None
+    return base
 
 
 @router.get("/api/enrollments/")
 async def list_enrollments_route(
-    student_id: int | None = Query(default=None),
-    school_year_id: int | None = Query(default=None),
+    student_id:      int | None = Query(default=None),
+    school_year_id:  int | None = Query(default=None),
+    section_id:      int | None = Query(default=None),
+    grade_level_id:  int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    rows = await list_enrollments(db, student_id=student_id, school_year_id=school_year_id)
+    rows = await list_enrollments(
+        db,
+        student_id=student_id,
+        school_year_id=school_year_id,
+        section_id=section_id,
+        grade_level_id=grade_level_id,
+    )
     return [_to_enrollment_out(row) for row in rows]
 
 
