@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
@@ -20,8 +21,8 @@ async def list_students_route(
     db: AsyncSession = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    rows = await list_students(db)
-    return [StudentOut.model_validate(row).model_dump(mode="json") for row in rows]
+    # list_students now returns enriched dicts — return them directly
+    return await list_students(db)
 
 
 @router.get("/api/students/{student_id}")
@@ -33,7 +34,8 @@ async def get_student_route(
     row = await get_student(db, student_id)
     if not row:
         return JSONResponse(status_code=404, content={"error": "Student not found."})
-    return StudentOut.model_validate(row).model_dump(mode="json")
+    # get_student now returns an enriched dict — return it directly
+    return row
 
 
 @router.post("/api/students")
