@@ -96,4 +96,7 @@ async def parent_student_info(
         "last_name": student.last_name,
         "grade_level": active.grade_level.grade_level_name if active else None,
         "section": active.section.section_name if active else None,
+        "guardian_first_name": student.guardian_first_name,
+        "guardian_last_name": student.guardian_last_name,
+        "guardian_contact": student.guardian_contact,
     }
