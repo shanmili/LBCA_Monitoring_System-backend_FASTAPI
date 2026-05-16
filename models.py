@@ -113,7 +113,7 @@ class Session(Base):
     expires_at                = Column(DateTime(timezone=True), nullable=False)
     last_activity             = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     is_active                 = Column(Boolean, default=True)
-    inactivity_timeout_minutes = Column(Integer, default=10)
+    inactivity_timeout_minutes = Column(Integer, default=1)
     created_at                = Column(DateTime(timezone=True), server_default=func.now())
 
     staff  = relationship("Staff", back_populates="sessions")
