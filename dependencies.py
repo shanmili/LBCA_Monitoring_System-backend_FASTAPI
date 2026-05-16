@@ -25,6 +25,10 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # ── Parent/student tokens bypass the StaffSession table ──────────────
+    if payload.get("role") == "parent":
+        return Staff(id=payload.get("sub"), role="parent", is_active=True)
+
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token")
