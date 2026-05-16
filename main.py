@@ -28,6 +28,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from database import Base, async_engine
+
+# ── Security additions ────────────────────────────────────────────────────────
+from logger import get_logger
+from activity_log import log_event, Action
+from rate_limit import limit_login, limit_password_reset, limit_otp, get_client_ip
+
+logger = get_logger("main")
 from models import *
 from app.api.routers import mobile_auth
 
@@ -43,11 +50,19 @@ async def startup():
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-allowed_origins = ["*"]
-
-extra = os.getenv("ALLOWED_ORIGINS", "")
-if extra:
-    allowed_origins += [o.strip() for o in extra.split(",")]
+# ── CORS: set ALLOWED_ORIGINS in Render env to your frontend URL ─────────────
+# e.g. "https://lbca-frontend.vercel.app"  (comma-separated for multiple)
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "")
+if _raw_origins.strip():
+    allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+else:
+    # Dev fallback — never use wildcard in production
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5177",
+    ]
+    logger.warning("ALLOWED_ORIGINS not set — CORS restricted to localhost only")
 
 app.add_middleware(
     CORSMiddleware,
@@ -393,12 +408,18 @@ async def get_audit_logs(
 # ==============================================================
 
 @app.post("/api/sessions", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, tags=["Authentication"])
-async def login(login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(request: Request, login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db)):
     """Create a session (login). Returns tokens or signals that 2FA is required."""
+    # Rate limit: 10 attempts per IP per minute
+    await limit_login(request)
+    ip = get_client_ip(request)
+    logger.info("Login attempt", extra={"email": login_data.email, "ip": ip})
+
     result = await db.execute(select(Staff).where(Staff.email == login_data.email))
     staff  = result.scalar_one_or_none()
 
     if not staff:
+        logger.warning("Login failed: user not found", extra={"email": login_data.email, "ip": ip})
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # ── permanent lock ─────────────────────────────────────────────────────────
@@ -425,6 +446,7 @@ async def login(login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db
     # ── wrong password ─────────────────────────────────────────────────────────
     if not verify_password(login_data.password, staff.password_hash):
         staff.login_attempts += 1
+        logger.warning("Wrong password", extra={"user_id": str(staff.id), "attempts": staff.login_attempts, "ip": ip})
 
         if staff.login_attempts >= MAX_ATTEMPTS:
             staff.lockout_count += 1
@@ -433,7 +455,9 @@ async def login(login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db
                 staff.permanent_lock  = True
                 staff.login_attempts  = 0
                 staff.locked_until    = None
+                await log_event(db, Action.ACCOUNT_PERM_LOCK, target_user_id=staff.id, ip=ip)
                 await db.commit()
+                logger.error("Account permanently locked", extra={"user_id": str(staff.id), "ip": ip})
                 raise HTTPException(
                     status_code=403,
                     detail="Account permanently locked due to too many failed attempts. Contact your administrator."
@@ -442,13 +466,18 @@ async def login(login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db
             duration             = LOCKOUT_MINUTES[staff.lockout_count - 1]
             staff.locked_until   = datetime.now(timezone.utc) + timedelta(minutes=duration)
             staff.login_attempts = 0
+            await log_event(db, Action.ACCOUNT_LOCKED, target_user_id=staff.id,
+                            detail=f"duration={duration}min tier={staff.lockout_count}", ip=ip)
             await db.commit()
+            logger.warning("Account locked", extra={"user_id": str(staff.id), "duration_min": duration, "ip": ip})
             raise HTTPException(
                 status_code=401,
                 detail=f"Too many failed attempts. Account locked for {duration} minutes "
                        f"(lockout {staff.lockout_count}/{MAX_LOCKOUTS})."
             )
 
+        await log_event(db, Action.LOGIN_FAILED, target_user_id=staff.id,
+                        detail=f"attempts={staff.login_attempts}", ip=ip)
         await db.commit()
         attempts_left = MAX_ATTEMPTS - staff.login_attempts
         raise HTTPException(
@@ -460,6 +489,9 @@ async def login(login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db
     staff.login_attempts = 0
     staff.locked_until   = None
     staff.lockout_count  = 0
+    await log_event(db, Action.LOGIN_SUCCESS, actor_id=staff.id, ip=ip,
+                    detail=f"device={login_data.device_id}")
+    logger.info("Login success", extra={"user_id": str(staff.id), "ip": ip})
     await db.commit()
 
     # ── device / 2FA check ─────────────────────────────────────────────────────
@@ -504,11 +536,15 @@ async def login(login_data: StaffLoginRequest, db: AsyncSession = Depends(get_db
             staff_id=staff.id,
             device_id=login_data.device_id,
             device_name=login_data.device_name,
+            ip_address=ip,
             is_trusted=True,
             last_2fa_verified=datetime.now(timezone.utc),
         )
         db.add(device)
         await db.flush()
+    else:
+        # Update IP on every login
+        device.ip_address = ip
 
     from models import Session as StaffSession
     db.add(StaffSession(
@@ -548,6 +584,7 @@ async def refresh_session(
 
 @app.delete("/api/sessions/me", status_code=status.HTTP_204_NO_CONTENT, tags=["Authentication"])
 async def logout(
+    request: Request,
     current_user: Staff = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -562,6 +599,10 @@ async def logout(
     )
     for session in result.scalars().all():
         session.is_active = False
+
+    ip = get_client_ip(request)
+    await log_event(db, Action.LOGOUT, actor_id=current_user.id, ip=ip)
+    logger.info("Logout", extra={"user_id": str(current_user.id), "ip": ip})
     await db.commit()
 
 
@@ -571,8 +612,10 @@ async def logout(
 # ==============================================================
 
 @app.post("/api/otp", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, tags=["Authentication"])
-async def verify_otp(verify_data: OTPVerifyRequest, db: AsyncSession = Depends(get_db)):
+async def verify_otp(request: Request, verify_data: OTPVerifyRequest, db: AsyncSession = Depends(get_db)):
     """Verify a login OTP and issue tokens (completes 2FA login)."""
+    await limit_otp(request)
+    ip = get_client_ip(request)
     result = await db.execute(
         select(OTPCode).where(
             OTPCode.staff_id == verify_data.user_id,
@@ -628,6 +671,9 @@ async def verify_otp(verify_data: OTPVerifyRequest, db: AsyncSession = Depends(g
         refresh_token=refresh_token,
         expires_at=expires_at,
     ))
+    await log_event(db, Action.OTP_VERIFIED, actor_id=staff.id,
+                    detail=f"device={verify_data.device_id}", ip=ip)
+    logger.info("OTP verified", extra={"user_id": str(staff.id), "ip": ip})
     await db.commit()
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
@@ -639,8 +685,10 @@ async def verify_otp(verify_data: OTPVerifyRequest, db: AsyncSession = Depends(g
 # ==============================================================
 
 @app.post("/api/password-reset", status_code=status.HTTP_202_ACCEPTED, tags=["Password Reset"])
-async def request_password_reset(request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+async def request_password_reset(http_request: Request, request: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     """Send a password-reset OTP to the user's registered contact."""
+    await limit_password_reset(http_request)
+    ip = get_client_ip(http_request)
     result = await db.execute(select(Staff).where(Staff.email == request.email))
     staff  = result.scalar_one_or_none()
 
@@ -695,8 +743,9 @@ async def request_password_reset(request: ForgotPasswordRequest, db: AsyncSessio
 
 
 @app.patch("/api/password-reset", tags=["Password Reset"])
-async def apply_password_reset(request: ResetPasswordRequest, db: AsyncSession = Depends(get_db), tags=["Password Reset"]):
+async def apply_password_reset(http_request: Request, request: ResetPasswordRequest, db: AsyncSession = Depends(get_db), tags=["Password Reset"]):
     """Verify OTP token and set the new password."""
+    ip = get_client_ip(http_request)
     if request.new_password != request.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
 
@@ -732,6 +781,8 @@ async def apply_password_reset(request: ResetPasswordRequest, db: AsyncSession =
         reset_record.reset_token   = None
         reset_record.token_expires = None
 
+    await log_event(db, Action.PASSWORD_RESET_OK, target_user_id=staff.id, ip=ip)
+    logger.info("Password reset applied", extra={"user_id": str(staff.id), "ip": ip})
     await db.commit()
     return {"message": "Password reset successful. You can now login."}
 

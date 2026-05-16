@@ -1,0 +1,58 @@
+# render_backup_cron.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+# Add this as a second service in your Render dashboard (or merge with your
+# existing render.yaml) to schedule automatic daily database backups.
+#
+# Steps:
+# 1. In Render: New → Cron Job
+# 2. Name:         lbca-daily-backup
+# 3. Schedule:     0 2 * * *          (runs every day at 02:00 UTC)
+# 4. Command:      python backup.py --upload
+# 5. Environment variables (same as your web service, plus these):
+#      BACKUP_DIR            ./backups
+#      BACKUP_RETAIN_DAYS    7
+#      BACKUP_S3_BUCKET      lbca-backups        ← your bucket name
+#      BACKUP_S3_ENDPOINT    https://...         ← provider endpoint
+#      BACKUP_S3_KEY_ID      <your key>
+#      BACKUP_S3_SECRET      <your secret>
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: lbca-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS          # e.g. https://lbca-frontend.vercel.app
+        sync: false
+      - key: LOG_LEVEL                # INFO | WARNING | DEBUG
+        value: INFO
+      - key: LOG_FORMAT               # json | text
+        value: json
+
+  - type: cron
+    name: lbca-daily-backup
+    runtime: python
+    schedule: "0 2 * * *"            # 02:00 UTC every day
+    buildCommand: pip install -r requirements.txt
+    startCommand: python backup.py --upload
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: BACKUP_DIR
+        value: ./backups
+      - key: BACKUP_RETAIN_DAYS
+        value: "7"
+      - key: BACKUP_S3_BUCKET
+        sync: false
+      - key: BACKUP_S3_ENDPOINT
+        sync: false
+      - key: BACKUP_S3_KEY_ID
+        sync: false
+      - key: BACKUP_S3_SECRET
+        sync: false
