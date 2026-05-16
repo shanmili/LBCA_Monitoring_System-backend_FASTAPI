@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 
 from database import Base, async_engine
 from models import *
+from app.api.routers import mobile_auth
 
 app = FastAPI(title="LBCA API", version="1.0.0")
 
@@ -42,13 +43,7 @@ async def startup():
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-allowed_origins = [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5177",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174",
-]
+allowed_origins = ["*"]
 
 extra = os.getenv("ALLOWED_ORIGINS", "")
 if extra:
@@ -997,3 +992,4 @@ app.include_router(subjects.router)
 app.include_router(schedules.router)
 app.include_router(teacher_availabilities.router)
 app.include_router(data_quality_logs.router)
+app.include_router(mobile_auth.router)
