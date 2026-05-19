@@ -11,13 +11,19 @@ import os
 
 app = FastAPI(title="LBCA Academic API", version="1.0.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+_raw = os.getenv("ALLOWED_ORIGINS", "")
+if _raw.strip():
+    _origins = [o.strip() for o in _raw.split(",") if o.strip()]
+else:
+    _origins = [
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:5177",
-    ],
+    ]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
