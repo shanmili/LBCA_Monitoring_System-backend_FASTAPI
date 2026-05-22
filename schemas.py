@@ -154,7 +154,7 @@ class ClassScheduleUpdate(BaseModel):
 
 
 class ClassScheduleResponse(BaseModel):
-    class_schedule_id: int
+    id: int
     school_year_id: int
     school_year: Optional[str] = None
     section_id: int
