@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
-from app.api.deps import AsyncSession, get_current_user, get_db, require_admin
+from app.api.deps import AsyncSession, get_current_user, get_db, require_admin, require_admin_or_teacher
 from app.schemas.student import StudentOut
 from app.schemas.student_enrollment import (
     StudentEnrollmentCreate,
@@ -84,7 +84,7 @@ async def list_enrollments_by_student_route(
 async def create_enrollment_route(
     payload: StudentEnrollmentCreate,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_admin_or_teacher),
 ):
     data = payload.model_dump()
     data["enrolled_by"] = current_user.id  # auto-set from authenticated user
@@ -107,7 +107,7 @@ async def create_enrollment_route(
 async def create_enrollment_with_student_route(
     payload: StudentEnrollmentWithStudentCreate,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_admin_or_teacher),
 ):
     data = payload.model_dump()
     data["enrolled_by"] = current_user.id  # auto-set from authenticated user
