@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from app.api.deps import AsyncSession, get_current_user, get_db, require_admin, require_admin_or_teacher
@@ -13,6 +13,17 @@ from app.services.student_service import (
 )
 
 router = APIRouter(tags=["Students"])
+
+# Fields a student/parent is allowed to update on their own record.
+# They cannot touch names, birthdate, gender, or any other academic field.
+STUDENT_SELF_EDITABLE_FIELDS = {
+    "address",
+    "guardian_first_name",
+    "guardian_mid_name",
+    "guardian_last_name",
+    "guardian_contact",
+    "guardian_relationship",
+}
 
 
 @router.get("/api/students/")
@@ -43,7 +54,7 @@ async def create_student_route(
     current_user=Depends(require_admin_or_teacher),
 ):
     data = payload.model_dump()
-    data["created_by"] = current_user.id   # auto-set from authenticated user
+    data["created_by"] = current_user.id  # auto-set from authenticated user
 
     try:
         row = await create_student(db, data)
@@ -67,10 +78,47 @@ async def update_student_route(
     student_id: int,
     payload: StudentUpdate,
     db: AsyncSession = Depends(get_db),
-    _admin=Depends(require_admin),
+    current_user=Depends(get_current_user),
 ):
+    user_role = getattr(current_user, "role", None)
+    data = payload.model_dump(exclude_unset=True)
+
+    if user_role in ("admin", "teacher"):
+        # Full update — no field restrictions
+        pass
+
+    elif user_role == "parent":
+        # parent tokens carry the student's login_id as `id` (a string like "S001").
+        # We verify the student_id in the URL actually belongs to this token's student.
+        token_student_id = getattr(current_user, "id", None)
+
+        # Fetch the student to cross-check their login_id matches the token subject
+        row = await get_student(db, student_id)
+        if not row:
+            return JSONResponse(status_code=404, content={"error": "Student not found."})
+
+        if str(row.login_id) != str(token_student_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only edit your own profile.",
+            )
+
+        # Strip any fields the student is not allowed to change
+        forbidden = {k for k in data if k not in STUDENT_SELF_EDITABLE_FIELDS}
+        if forbidden:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Students cannot modify: {', '.join(sorted(forbidden))}.",
+            )
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied.",
+        )
+
     try:
-        row = await update_student(db, student_id, payload.model_dump(exclude_unset=True))
+        row = await update_student(db, student_id, data)
     except ServiceError as exc:
         return JSONResponse(status_code=exc.status_code, content=exc.detail)
 

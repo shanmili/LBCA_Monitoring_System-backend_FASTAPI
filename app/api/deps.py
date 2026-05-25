@@ -24,4 +24,11 @@ async def require_admin_or_teacher(user: Staff = Depends(get_current_user)) -> S
     return user
 
 
-__all__ = ["get_db", "get_current_user", "require_admin", "require_admin_or_teacher", "AsyncSession", "Staff"]
+__all__ = [
+    "get_db",
+    "get_current_user",
+    "require_admin",
+    "require_admin_or_teacher",
+    "AsyncSession",
+    "Staff",
+]
