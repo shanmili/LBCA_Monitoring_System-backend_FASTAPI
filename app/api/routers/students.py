@@ -15,7 +15,7 @@ from app.services.student_service import (
 router = APIRouter(tags=["Students"])
 
 # Fields a student/parent is allowed to update on their own record.
-# They cannot touch names, birthdate, gender, or any other academic field.
+# They cannot touch name, birthdate, gender, or any academic field.
 STUDENT_SELF_EDITABLE_FIELDS = {
     "address",
     "guardian_first_name",
@@ -54,7 +54,7 @@ async def create_student_route(
     current_user=Depends(require_admin_or_teacher),
 ):
     data = payload.model_dump()
-    data["created_by"] = current_user.id  # auto-set from authenticated user
+    data["created_by"] = current_user.id
 
     try:
         row = await create_student(db, data)
@@ -84,20 +84,15 @@ async def update_student_route(
     data = payload.model_dump(exclude_unset=True)
 
     if user_role in ("admin", "teacher"):
-        # Full update — no field restrictions
+        # Full update — no restrictions
         pass
 
     elif user_role == "parent":
-        # parent tokens carry the student's login_id as `id` (a string like "S001").
-        # We verify the student_id in the URL actually belongs to this token's student.
+        # The parent token's `id` is the student_id integer (set as `sub` in the JWT).
+        # Just compare it directly to the URL parameter.
         token_student_id = getattr(current_user, "id", None)
 
-        # Fetch the student to cross-check their login_id matches the token subject
-        row = await get_student(db, student_id)
-        if not row:
-            return JSONResponse(status_code=404, content={"error": "Student not found."})
-
-        if str(row.login_id) != str(token_student_id):
+        if token_student_id is None or int(token_student_id) != student_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You can only edit your own profile.",
