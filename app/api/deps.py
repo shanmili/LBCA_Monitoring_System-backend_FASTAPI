@@ -15,4 +15,13 @@ async def require_admin(user: Staff = Depends(get_current_user)) -> Staff:
     return user
 
 
-__all__ = ["get_db", "get_current_user", "require_admin", "AsyncSession", "Staff"]
+async def require_admin_or_teacher(user: Staff = Depends(get_current_user)) -> Staff:
+    if user.role not in ("admin", "teacher"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted to admin or teacher.",
+        )
+    return user
+
+
+__all__ = ["get_db", "get_current_user", "require_admin", "require_admin_or_teacher", "AsyncSession", "Staff"]

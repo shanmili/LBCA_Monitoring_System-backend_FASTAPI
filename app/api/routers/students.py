@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from app.api.deps import AsyncSession, get_current_user, get_db, require_admin
+from app.api.deps import AsyncSession, get_current_user, get_db, require_admin, require_admin_or_teacher
 from app.schemas.student import StudentCreate, StudentOut, StudentUpdate
 from app.services.student_service import (
     ServiceError,
@@ -40,7 +40,7 @@ async def get_student_route(
 async def create_student_route(
     payload: StudentCreate,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user=Depends(require_admin_or_teacher),
 ):
     data = payload.model_dump()
     data["created_by"] = current_user.id   # auto-set from authenticated user
