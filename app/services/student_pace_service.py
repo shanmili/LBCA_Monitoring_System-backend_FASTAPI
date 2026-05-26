@@ -36,8 +36,7 @@ async def _sync_warning_for_pace(db: AsyncSession, pace: StudentPace) -> None:
     """
     After a StudentPace update, find any linked EarlyWarning for the same
     student + subject and recalculate risk_level, status, and pace_percent
-    so they never go stale. Also copies teacher back to StudentPace so the
-    frontend can display it without needing a separate EarlyWarning record.
+    so they never go stale.
     """
     result = await db.execute(
         select(EarlyWarning).where(
@@ -46,6 +45,8 @@ async def _sync_warning_for_pace(db: AsyncSession, pace: StudentPace) -> None:
         )
     )
     warnings = list(result.scalars().all())
+    if not warnings:
+        return
 
     new_pct = float(pace.pace_percent)
     new_risk = _risk_from_pct(new_pct)
@@ -56,12 +57,8 @@ async def _sync_warning_for_pace(db: AsyncSession, pace: StudentPace) -> None:
         w.paces_behind = pace.paces_behind
         w.risk_level = new_risk
         w.status = new_status
-        # Copy teacher to pace record so frontend always has it
-        if w.teacher and not pace.teacher:
-            pace.teacher = w.teacher
 
-    if warnings:
-        await db.commit()
+    await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -101,18 +98,6 @@ async def create_pace(db: AsyncSession, payload: dict) -> StudentPace:
         raise ServiceError(404, {"student_id": ["Student does not exist."]})
     if not (await db.get(StudentEnrollment, payload["enrollment_id"])):
         raise ServiceError(404, {"enrollment_id": ["Enrollment does not exist."]})
-
-    # If no teacher provided, check EarlyWarning for this student+subject
-    if not payload.get("teacher"):
-        result = await db.execute(
-            select(EarlyWarning).where(
-                EarlyWarning.student_id == payload["student_id"],
-                EarlyWarning.subject == payload.get("subject", ""),
-            )
-        )
-        w = result.scalar_one_or_none()
-        if w and w.teacher:
-            payload["teacher"] = w.teacher
 
     pace = StudentPace(**payload)
     db.add(pace)
