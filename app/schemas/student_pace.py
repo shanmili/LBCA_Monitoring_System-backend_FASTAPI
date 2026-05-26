@@ -17,12 +17,14 @@ class StudentPaceCreate(BaseModel):
     student_id: int
     enrollment_id: int
     subject: str
+    teacher: Optional[str] = None
     pace_percent: float = 0.0
     paces_behind: int = 0
 
 
 class StudentPaceUpdate(BaseModel):
     subject: Optional[str] = None
+    teacher: Optional[str] = None
     pace_percent: Optional[float] = None
     paces_behind: Optional[int] = None
 
@@ -35,6 +37,7 @@ class StudentPaceOut(BaseModel):
     student_name: Optional[str] = None   # populated by service
     enrollment_id: int
     subject: str
+    teacher: Optional[str] = None
     pace_percent: float
     paces_behind: int
     created_at: datetime

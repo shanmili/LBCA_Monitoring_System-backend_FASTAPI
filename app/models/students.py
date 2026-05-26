@@ -127,6 +127,7 @@ class StudentPace(Base):
         index=True,
     )
     subject = Column(String(100), nullable=False)
+    teacher = Column(String(100), nullable=True)                 # teacher name for this subject
     pace_percent = Column(Float, default=0.0, nullable=False)   # % of curriculum completed
     paces_behind = Column(Integer, default=0, nullable=False)   # number of paces behind standard
 
