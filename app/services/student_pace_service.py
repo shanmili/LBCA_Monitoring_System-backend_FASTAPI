@@ -8,6 +8,60 @@ from app.services.student_service import ServiceError
 
 
 # ---------------------------------------------------------------------------
+# Risk recalculation helpers
+# Whenever pace_percent changes these keep EarlyWarning in sync automatically.
+# ---------------------------------------------------------------------------
+
+def _risk_from_pct(pct: float) -> str:
+    """Derive risk level purely from pace percentage."""
+    if pct < 60:
+        return "critical"
+    if pct < 75:
+        return "high"
+    if pct < 85:
+        return "moderate"
+    return "low"
+
+
+def _status_from_risk(risk: str) -> str:
+    return {
+        "critical": "Critical",
+        "high": "At Risk",
+        "moderate": "Warning",
+        "low": "On Track",
+    }.get(risk, "On Track")
+
+
+async def _sync_warning_for_pace(db: AsyncSession, pace: StudentPace) -> None:
+    """
+    After a StudentPace update, find any linked EarlyWarning for the same
+    student + subject and recalculate risk_level, status, and pace_percent
+    so they never go stale.
+    """
+    result = await db.execute(
+        select(EarlyWarning).where(
+            EarlyWarning.student_id == pace.student_id,
+            EarlyWarning.subject == pace.subject,
+        )
+    )
+    warnings = list(result.scalars().all())
+    if not warnings:
+        return
+
+    new_pct = float(pace.pace_percent)
+    new_risk = _risk_from_pct(new_pct)
+    new_status = _status_from_risk(new_risk)
+
+    for w in warnings:
+        w.pace_percent = new_pct
+        w.paces_behind = pace.paces_behind
+        w.risk_level = new_risk
+        w.status = new_status
+
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
 # StudentPace
 # ---------------------------------------------------------------------------
 
@@ -73,7 +127,12 @@ async def update_pace(db: AsyncSession, pace_id: int, changes: dict) -> StudentP
         raise ServiceError(400, {"detail": "Update failed."})
 
     await db.refresh(pace)
-    return await get_pace(db, pace_id)
+    pace = await get_pace(db, pace_id)
+
+    # Keep any linked EarlyWarning rows in sync with the new pace_percent
+    await _sync_warning_for_pace(db, pace)
+
+    return pace
 
 
 async def delete_pace(db: AsyncSession, pace_id: int) -> None:
